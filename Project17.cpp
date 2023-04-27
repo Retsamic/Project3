@@ -10,10 +10,6 @@
 #include <set>
 #include <filesystem>
 #include "csv.h"
-#include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include <glfw3.h>
 
 
 using namespace std;
@@ -42,41 +38,6 @@ struct Video {
     string description;
 };
 
-void init_glfw() {
-    if (!glfwInit()) {
-        cerr << "Failed to initialize GLFW" << endl;
-        exit(EXIT_FAILURE);
-    }
-}
-
-GLFWwindow* init_window() {
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Tag Analyzer", NULL, NULL);
-    if (window == NULL) {
-        cerr << "Failed to create GLFW window" << endl;
-        glfwTerminate();
-        exit(EXIT_FAILURE);
-    }
-    glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
-    return window;
-}
-
-void init_imgui(GLFWwindow* window) {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    ImGui::StyleColorsDark();
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 130");
-}
-
-void cleanup_imgui() {
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-}
 
 double engagement_rate(const Video& video) {
     double like_weight = 1.0;
@@ -184,18 +145,25 @@ int main() {
                     "thumbnail_link", "comments_disabled", "ratings_disabled", "video_error_or_removed", "description");
 
                 Video video;
-                while (in.read_row(video.video_id, video.trending_date, video.title, video.channel_title,
-                    video.category_id, video.publish_time, video.tags, video.views, video.likes, video.dislikes,
-                    video.comment_count, video.thumbnail_link, video.temp_comments_disabled, video.temp_ratings_disabled,
-                    video.temp_video_error_or_removed, video.description)) {
+                try {
+                    while (in.read_row(video.video_id, video.trending_date, video.title, video.channel_title,
+                        video.category_id, video.publish_time, video.tags, video.views, video.likes, video.dislikes,
+                        video.comment_count, video.thumbnail_link, video.temp_comments_disabled, video.temp_ratings_disabled,
+                        video.temp_video_error_or_removed, video.description)) {
 
-                    video.comments_disabled = (video.temp_comments_disabled == "True");
-                    video.ratings_disabled = (video.temp_ratings_disabled == "True");
-                    video.video_error_or_removed = (video.temp_video_error_or_removed == "True");
-                    video.country = default_country;
-                    videos.push_back(video);
-                    update_tag_views_and_interaction(video);
+                        video.comments_disabled = (video.temp_comments_disabled == "True");
+                        video.ratings_disabled = (video.temp_ratings_disabled == "True");
+                        video.video_error_or_removed = (video.temp_video_error_or_removed == "True");
+                        video.country = default_country;
+                        videos.push_back(video);
+                        update_tag_views_and_interaction(video);
+                    }
                 }
+                catch (const std::exception& e) {
+                    cerr << "Error parsing a line in file " << entry.path() << ": " << e.what() << endl;
+                    continue;
+                }
+
             }
             catch (const std::exception& e) {
                 cerr << "Error parsing file " << entry.path() << ": " << e.what() << endl;
