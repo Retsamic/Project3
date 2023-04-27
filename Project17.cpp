@@ -38,23 +38,23 @@ struct Video {
     string description;
 };
 
+//calculates the engagement rate of a video
+double engagementRate(const Video& video) {
+    double likeWeight = 1.0;
+    double dislikeWeight = 0.5;
+    double commentWeight = 1.5;
 
-double engagement_rate(const Video& video) {
-    double like_weight = 1.0;
-    double dislike_weight = 0.5;
-    double comment_weight = 1.5;
+    double totalLikes = likeWeight * video.likes;
+    double totalDislikes = dislikeWeight * video.dislikes;
+    double totalComments = commentWeight * video.comment_count;
 
-    double total_likes = like_weight * video.likes;
-    double total_dislikes = dislike_weight * video.dislikes;
-    double total_comments = comment_weight * video.comment_count;
-
-    return (total_likes + total_dislikes + total_comments) / video.views;
+    return (totalLikes + totalDislikes + totalComments) / video.views;
 }
-
-vector<string> validate_and_convert_country_input(const string& input, const set<string>& valid_countries) {
-    string uppercase_input = input;
-    transform(input.begin(), input.end(), uppercase_input.begin(), ::toupper);
-    stringstream ss(uppercase_input);
+//validates and converts the user input for countries
+vector<string> validateAndConvertCountryInput(const string& input, const set<string>& valid_countries) {
+    string uppercaseInput = input;
+    transform(input.begin(), input.end(), uppercaseInput.begin(), ::toupper);
+    stringstream ss(uppercaseInput);
     string token;
     vector<string> result;
 
@@ -70,64 +70,60 @@ vector<string> validate_and_convert_country_input(const string& input, const set
 
     return result;
 }
-
-
-
-
-
-vector<string> split_tags(const string& tags) {
+//splits the video tags into a vector of tags
+vector<string> splitTags(const string& tags) {
     stringstream ss(tags);
     string tag;
-    vector<string> tag_list;
+    vector<string> tagList;
 
     while (getline(ss, tag, '|')) {
-        tag_list.push_back(tag);
+        tagList.push_back(tag);
     }
 
-    return tag_list;
+    return tagList;
 }
-
-bool is_ascii(const std::string& s) {
+//checks if a string is ASCII
+bool isAscii(const std::string& s) {
     return std::all_of(s.begin(), s.end(), [](char c) { return static_cast<unsigned char>(c) < 128; });
 }
 
-map<string, map<string, int>> country_tag_views;
-map<string, map<string, int>> country_tag_interaction;
-map<string, int> global_tag_views;
-map<string, int> global_tag_interaction;
+map<string, map<string, int>> countryTagViews;
+map<string, map<string, int>> countryTagInteractions;
+map<string, int> globalTagViews;
+map<string, int> globalTagInteraction;
 
-void update_tag_views_and_interaction(const Video& video) {
-    double engagement = engagement_rate(video);
-    const auto& tags = split_tags(video.tags);
+void updateTagViewsAndInteractions(const Video& video) {
+    double engagement = engagementRate(video);
+    const auto& tags = splitTags(video.tags);
     for (const string& tag : tags) {
-        if (is_ascii(tag)) {
-            int tag_views = video.views;
-            double weighted_engagement = engagement * tag_views;
+        if (isAscii(tag)) {
+            int tagViews = video.views;
+            double weightedEngagement = engagement * tagViews;
 
-            country_tag_views[video.country][tag] += tag_views;
-            country_tag_interaction[video.country][tag] += weighted_engagement;
-            global_tag_views[tag] += tag_views;
-            global_tag_interaction[tag] += weighted_engagement;
+            countryTagViews[video.country][tag] += tagViews;
+            countryTagInteractions[video.country][tag] += weightedEngagement;
+            globalTagViews[tag] += tagViews;
+            globalTagInteraction[tag] += weightedEngagement;
         }
     }
 }
 
 
-vector<pair<string, int>> top_n_elements(const map<string, int>& m, size_t n) {
-    vector<pair<string, int>> top_elements;
+vector<pair<string, int>> topNElements(const map<string, int>& m, size_t n) {
+    vector<pair<string, int>> topElements;
     for (const auto& entry : m) {
-        top_elements.push_back(entry);
+        topElements.push_back(entry);
     }
 
-    sort(top_elements.begin(), top_elements.end(), [](const auto& a, const auto& b) {
+    sort(topElements.begin(), topElements.end(), [](const auto& a, const auto& b) {
         return a.second > b.second;
         });
 
-    if (top_elements.size() > n) {
-        top_elements.resize(n);
+    if (topElements.size() > n) {
+        topElements.resize(n);
     }
 
-    return top_elements;
+    return topElements;
 }
 
 int main() {
@@ -156,7 +152,7 @@ int main() {
                         video.video_error_or_removed = (video.temp_video_error_or_removed == "True");
                         video.country = default_country;
                         videos.push_back(video);
-                        update_tag_views_and_interaction(video);
+                        updateTagViewsAndInteractions(video);
                     }
                 }
                 catch (const std::exception& e) {
@@ -178,44 +174,44 @@ int main() {
         countries.insert(video.country);
     }
 
-    string all_countries = "ALL";
+    string allCountries = "ALL";
     cout << "Available countries: ";
     for (const string& country : countries) {
         cout << country << ", ";
     }
-    cout << all_countries << endl;
+    cout << allCountries << endl;
 
-    string selected_countries_str;
-    bool valid_input = false;
+    string selectedCountriesStr;
+    bool validInput = false;
     cout.flush();
-    vector<string> selected_countries_vec;
+    vector<string> selectedCountriesVec;
 
-    while (!valid_input) {
+    while (!validInput) {
         cout << "Enter the countries you want to analyze (comma-separated), or type 'All': ";
-        getline(cin, selected_countries_str);
+        getline(cin, selectedCountriesStr);
 
-        selected_countries_vec = validate_and_convert_country_input(selected_countries_str, countries);
+        selectedCountriesVec = validateAndConvertCountryInput(selectedCountriesStr, countries);
 
-        if (selected_countries_vec.empty()) {
+        if (selectedCountriesVec.empty()) {
             cout << "Please type one of the options" << endl;
         }
         else {
-            valid_input = true;
+            validInput = true;
         }
     }
 
     // Convert the vector to a set
-    set<string> selected_countries;
-    if (selected_countries_vec.size() == 1 && selected_countries_vec[0] == "ALL") {
-        selected_countries = countries;
+    set<string> selectedCountries;
+    if (selectedCountriesVec.size() == 1 && selectedCountriesVec[0] == "ALL") {
+        selectedCountries = countries;
     }
     else {
-        for (const string& country : selected_countries_vec) {
-            selected_countries.insert(country);
+        for (const string& country : selectedCountriesVec) {
+            selectedCountries.insert(country);
         }
     }
 
-    for (const string& country : selected_countries) {
+    for (const string& country : selectedCountries) {
         if (countries.count(country) == 0) {
             cerr << "Invalid country: " << country << endl;
             continue;
@@ -224,41 +220,41 @@ int main() {
         cout << "\nCountry: " << country << endl;
 
         // Top 25 keywords/tags for views
-        auto top_views = top_n_elements(country_tag_views[country], 25);
+        auto topViews = topNElements(countryTagViews[country], 25);
         cout << "Top 25 keywords/tags for views:" << endl;
-        for (const auto& [tag, views] : top_views) {
+        for (const auto& [tag, views] : topViews) {
             cout << tag << ": " << views << endl;
         }
 
         // Top 25 keywords/tags to avoid for views
-        auto bottom_views = top_n_elements(country_tag_views[country], country_tag_views[country].size());
+        auto bottomViews = topNElements(countryTagViews[country], countryTagViews[country].size());
         cout << "\nTop 25 keywords/tags to avoid for views:" << endl;
-        reverse(bottom_views.begin(), bottom_views.end());
-        bottom_views.resize(25);
-        for (const auto& [tag, views] : bottom_views) {
+        reverse(bottomViews.begin(), bottomViews.end());
+        bottomViews.resize(25);
+        for (const auto& [tag, views] : bottomViews) {
             cout << tag << ": " << views << endl;
         }
 
         // Top 25 keywords/tags for positive interaction
-        auto top_interaction = top_n_elements(country_tag_interaction[country], 25);
+        auto topInteraction = topNElements(countryTagInteractions[country], 25);
         cout << "\nTop 25 keywords/tags for positive interaction:" << endl;
-        for (const auto& [tag, interaction] : top_interaction) {
+        for (const auto& [tag, interaction] : topInteraction) {
             cout << tag << ": " << interaction << endl;
         }
 
         // Top 25 keywords/tags to avoid for positive interaction
-        auto bottom_interaction = top_n_elements(country_tag_interaction[country], country_tag_interaction[country].size());
+        auto bottomInteraction = topNElements(countryTagInteractions[country], countryTagInteractions[country].size());
         cout << "\nTop 25 keywords/tags to avoid for positive interaction:" << endl;
-        reverse(bottom_interaction.begin(), bottom_interaction.end());
-        bottom_interaction.resize(25);
-        for (const auto& [tag, interaction] : bottom_interaction) {
+        reverse(bottomInteraction.begin(), bottomInteraction.end());
+        bottomInteraction.resize(25);
+        for (const auto& [tag, interaction] : bottomInteraction) {
             cout << tag << ": " << interaction << endl;
         }
     }
 
-    auto top_global_views = top_n_elements(global_tag_views, 25);
+    auto topGlobalViews = topNElements(globalTagViews, 25);
     cout << "\nTop 25 keywords/tags for a global audience:" << endl;
-    for (const auto& [tag, views] : top_global_views) {
+    for (const auto& [tag, views] : topGlobalViews) {
         cout << tag << ": " << views << endl;
     }
 
