@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <chrono>
 #include <filesystem>
 #include "csv.h"
 
@@ -108,6 +109,103 @@ void updateTagViewsAndInteractions(const Video& video) {
     }
 }
 
+struct TreeNode {
+    string key;
+    int value;
+    TreeNode* left;
+    TreeNode* right;
+
+    TreeNode(string key, int value) : key(key), value(value), left(nullptr), right(nullptr) {}
+    size_t size() const {
+        size_t leftSize = left ? left->size() : 0;
+        size_t rightSize = right ? right->size() : 0;
+        return 1 + leftSize + rightSize;
+    }
+};
+
+TreeNode* insertNode(TreeNode* root, const string& key, int value) {
+    if (root == nullptr) {
+        return new TreeNode(key, value);
+    }
+
+    if (key < root->key) {
+        root->left = insertNode(root->left, key, value);
+    }
+    else if (key > root->key) {
+        root->right = insertNode(root->right, key, value);
+    }
+    else {
+        root->value += value;
+    }
+
+    return root;
+}
+
+TreeNode* searchNode(TreeNode* root, const string& key) {
+    if (root == nullptr || root->key == key) {
+        return root;
+    }
+
+    if (key < root->key) {
+        return searchNode(root->left, key);
+    }
+
+    return searchNode(root->right, key);
+}
+
+void updateTagViewsAndInteractionsBST(const Video& video, TreeNode*& countryTagViewsRoot, TreeNode*& countryTagInteractionsRoot, TreeNode*& globalTagViewsRoot, TreeNode*& globalTagInteractionRoot) {
+    double engagement = engagementRate(video);
+    const auto& tags = splitTags(video.tags);
+    for (const string& tag : tags) {
+        if (isAscii(tag)) {
+            int tagViews = video.views;
+            double weightedEngagement = engagement * tagViews;
+
+            TreeNode* countryNode = searchNode(countryTagViewsRoot, tag);
+            if (countryNode) {
+                countryNode->value += tagViews;
+            }
+            else {
+                countryTagViewsRoot = insertNode(countryTagViewsRoot, tag, tagViews);
+            }
+
+            TreeNode* countryInteractionNode = searchNode(countryTagInteractionsRoot, tag);
+            if (countryInteractionNode) {
+                countryInteractionNode->value += weightedEngagement;
+            }
+            else {
+                countryTagInteractionsRoot = insertNode(countryTagInteractionsRoot, tag, weightedEngagement);
+            }
+
+            TreeNode* globalNode = searchNode(globalTagViewsRoot, tag);
+            if (globalNode) {
+                globalNode->value += tagViews;
+            }
+            else {
+                globalTagViewsRoot = insertNode(globalTagViewsRoot, tag, tagViews);
+            }
+
+            TreeNode* globalInteractionNode = searchNode(globalTagInteractionRoot, tag);
+            if (globalInteractionNode) {
+                globalInteractionNode->value += weightedEngagement;
+            }
+            else {
+                globalTagInteractionRoot = insertNode(globalTagInteractionRoot, tag, weightedEngagement);
+            }
+        }
+    }
+}
+
+void inOrderTraversal(TreeNode* root, vector<pair<string, int>>& result) {
+    if (root == nullptr) {
+        return;
+    }
+
+    inOrderTraversal(root->left, result);
+    result.push_back(make_pair(root->key, root->value));
+    inOrderTraversal(root->right, result);
+}
+
 
 vector<pair<string, int>> topNElements(const map<string, int>& m, size_t n) {
     vector<pair<string, int>> topElements;
@@ -126,9 +224,73 @@ vector<pair<string, int>> topNElements(const map<string, int>& m, size_t n) {
     return topElements;
 }
 
+vector<pair<string, int>> topNElementsFromBST(TreeNode* root, size_t n) {
+    vector<pair<string, int>> elements;
+    inOrderTraversal(root, elements);
+
+    sort(elements.begin(), elements.end(), [](const auto& a, const auto& b) {
+        return a.second > b.second;
+        });
+
+    if (elements.size() > n) {
+        elements.resize(n);
+    }
+
+    return elements;
+}
+
+vector<string> split(const string& str, char delimiter) {
+    vector<string> result;
+    stringstream ss(str);
+    string item;
+
+    while (getline(ss, item, delimiter)) {
+        result.push_back(item);
+    }
+
+    return result;
+}
+
+void trim(string& str) {
+    size_t first = str.find_first_not_of(' ');
+    if (first == string::npos) {
+        str = "";
+        return;
+    }
+    size_t last = str.find_last_not_of(' ');
+    str = str.substr(first, last - first + 1);
+}
+
+void printElements(const vector<pair<string, int>>& elements) {
+    for (const auto& element : elements) {
+        cout << element.first << ": " << element.second << "\n";
+    }
+}
+
+
+
+
 int main() {
     string foldername = "archive"; // Replace with the name of the folder containing the dataset files
     vector<Video> videos;
+
+    cout << "Choose a data structure for parsing (map or bst): ";
+    string dataStructure;
+    getline(cin, dataStructure);
+    transform(dataStructure.begin(), dataStructure.end(), dataStructure.begin(), ::tolower);
+
+    while (dataStructure != "map" && dataStructure != "bst") {
+        cout << "Please choose a valid data structure (map or bst): ";
+        getline(cin, dataStructure);
+        transform(dataStructure.begin(), dataStructure.end(), dataStructure.begin(), ::tolower);
+    }
+
+    auto start = chrono::high_resolution_clock::now();
+
+    TreeNode* countryTagViewsRoot = nullptr;
+    TreeNode* countryTagInteractionsRoot = nullptr;
+    TreeNode* globalTagViewsRoot = nullptr;
+    TreeNode* globalTagInteractionRoot = nullptr;
 
     for (const auto& entry : fs::directory_iterator(foldername)) {
         if (entry.path().extension() == ".csv") {
@@ -152,112 +314,153 @@ int main() {
                         video.video_error_or_removed = (video.temp_video_error_or_removed == "True");
                         video.country = default_country;
                         videos.push_back(video);
-                        updateTagViewsAndInteractions(video);
+
+                        if (dataStructure == "map") {
+                            updateTagViewsAndInteractions(video);
+                        }
+                        else {
+                            updateTagViewsAndInteractionsBST(video, countryTagViewsRoot, countryTagInteractionsRoot, globalTagViewsRoot, globalTagInteractionRoot);
+                        }
                     }
                 }
                 catch (const std::exception& e) {
-                    cerr << "Error parsing a line in file " << entry.path() << ": " << e.what() << endl;
+                    cerr << "Error parsing a line in file " << entry.path() << ": " << e.what() << "\n";
                     continue;
                 }
 
             }
             catch (const std::exception& e) {
-                cerr << "Error parsing file " << entry.path() << ": " << e.what() << endl;
+                cerr << "Error parsing file " << entry.path() << ": " << e.what() << "\n";
                 continue;
             }
         }
     }
 
 
+    auto end = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+    cout << "Time taken to parse data using " << dataStructure << ": " << duration << " milliseconds" << "\n";
+
     set<string> countries;
     for (const Video& video : videos) {
         countries.insert(video.country);
     }
 
-    string allCountries = "ALL";
     cout << "Available countries: ";
     for (const string& country : countries) {
-        cout << country << ", ";
+        cout << country << " ";
     }
-    cout << allCountries << endl;
+    cout << "\n";
 
-    string selectedCountriesStr;
     bool validInput = false;
-    cout.flush();
-    vector<string> selectedCountriesVec;
+    vector<string> selectedCountries;
 
     while (!validInput) {
-        cout << "Enter the countries you want to analyze (comma-separated), or type 'All': ";
-        getline(cin, selectedCountriesStr);
+        cout << "Select countries (use comma-separated values): ";
+        string input;
+        getline(cin, input);
 
-        selectedCountriesVec = validateAndConvertCountryInput(selectedCountriesStr, countries);
-
-        if (selectedCountriesVec.empty()) {
-            cout << "Please type one of the options" << endl;
-        }
-        else {
-            validInput = true;
+        selectedCountries = split(input, ',');
+        for (string& country : selectedCountries) {
+            trim(country);
+            if (countries.find(country) != countries.end()) {
+                validInput = true;
+            }
+            else {
+                cout << "Invalid country code: " << country << "\n";
+                validInput = false;
+                break;
+            }
         }
     }
+
+
 
     // Convert the vector to a set
-    set<string> selectedCountries;
-    if (selectedCountriesVec.size() == 1 && selectedCountriesVec[0] == "ALL") {
-        selectedCountries = countries;
-    }
-    else {
-        for (const string& country : selectedCountriesVec) {
-            selectedCountries.insert(country);
-        }
-    }
+    set<string> selectedCountriesSet(selectedCountries.begin(), selectedCountries.end());
 
     for (const string& country : selectedCountries) {
-        if (countries.count(country) == 0) {
-            cerr << "Invalid country: " << country << endl;
-            continue;
-        }
 
-        cout << "\nCountry: " << country << endl;
+        cout << "                                                       " << "\n";
+        cout << "                                                       " << "\n";
+        cout << "                                                       " << "\n";
+        cout << "\nCountry: " << country << "\n";
 
         // Top 25 keywords/tags for views
-        auto topViews = topNElements(countryTagViews[country], 25);
-        cout << "Top 25 keywords/tags for views:" << endl;
-        for (const auto& [tag, views] : topViews) {
-            cout << tag << ": " << views << endl;
+        if (dataStructure == "map") {
+            auto topViews = topNElements(countryTagViews[country], 25);
+            cout << "Top 25 keywords/tags for views:" << "\n";
+            printElements(topViews);
+        }
+        else {
+            auto topViews = topNElementsFromBST(countryTagViewsRoot, 25);
+            cout << "Top 25 keywords/tags for views:" << "\n";
+            printElements(topViews);
         }
 
         // Top 25 keywords/tags to avoid for views
-        auto bottomViews = topNElements(countryTagViews[country], countryTagViews[country].size());
-        cout << "\nTop 25 keywords/tags to avoid for views:" << endl;
-        reverse(bottomViews.begin(), bottomViews.end());
-        bottomViews.resize(25);
-        for (const auto& [tag, views] : bottomViews) {
-            cout << tag << ": " << views << endl;
+        if (dataStructure == "map") {
+            auto bottomViews = topNElements(countryTagViews[country], countryTagViews[country].size());
+            reverse(bottomViews.begin(), bottomViews.end());
+            bottomViews.resize(25);
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "Top 25 keywords/tags to avoid for views:" << "\n";
+            printElements(bottomViews);
+        }
+        else {
+            auto bottomViews = topNElementsFromBST(countryTagViewsRoot, countryTagViewsRoot->size());
+            reverse(bottomViews.begin(), bottomViews.end());
+            bottomViews.resize(25);
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "Top 25 keywords/tags to avoid for views:" << "\n";
+            printElements(bottomViews);
         }
 
         // Top 25 keywords/tags for positive interaction
-        auto topInteraction = topNElements(countryTagInteractions[country], 25);
-        cout << "\nTop 25 keywords/tags for positive interaction:" << endl;
-        for (const auto& [tag, interaction] : topInteraction) {
-            cout << tag << ": " << interaction << endl;
+        if (dataStructure == "map") {
+            auto topInteraction = topNElements(countryTagInteractions[country], 25);
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "Top 25 keywords/tags for positive interaction:" << "\n";
+            printElements(topInteraction);
+        }
+        else {
+            auto topInteraction = topNElementsFromBST(countryTagInteractionsRoot, 25);
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "Top 25 keywords/tags for positive interaction:" << "\n";
+            printElements(topInteraction);
         }
 
         // Top 25 keywords/tags to avoid for positive interaction
-        auto bottomInteraction = topNElements(countryTagInteractions[country], countryTagInteractions[country].size());
-        cout << "\nTop 25 keywords/tags to avoid for positive interaction:" << endl;
-        reverse(bottomInteraction.begin(), bottomInteraction.end());
-        bottomInteraction.resize(25);
-        for (const auto& [tag, interaction] : bottomInteraction) {
-            cout << tag << ": " << interaction << endl;
+        if (dataStructure == "map") {
+            auto bottomInteraction = topNElements(countryTagInteractions[country], countryTagInteractions[country].size());
+            reverse(bottomInteraction.begin(), bottomInteraction.end());
+            bottomInteraction.resize(25);
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "Top 25 keywords/tags to avoid for positive interaction:" << "\n";
+            printElements(bottomInteraction);
         }
-    }
-
-    auto topGlobalViews = topNElements(globalTagViews, 25);
-    cout << "\nTop 25 keywords/tags for a global audience:" << endl;
-    for (const auto& [tag, views] : topGlobalViews) {
-        cout << tag << ": " << views << endl;
+        else {
+            auto bottomInteraction = topNElementsFromBST(countryTagInteractionsRoot, countryTagInteractionsRoot->size());
+            reverse(bottomInteraction.begin(), bottomInteraction.end());
+            bottomInteraction.resize(25);
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "                                                       " << "\n";
+            cout << "Top 25 keywords/tags to avoid for positive interaction:" << "\n";
+            printElements(bottomInteraction);
+        }
     }
 
     return 0;
 }
-
